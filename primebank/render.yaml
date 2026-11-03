@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: primebank
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    plan: free
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_PATH
+        value: /opt/render/project/src/primebank.sqlite
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: CURRENCY_NAME
+        value: Night-Dollar
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: DISCORD_REDIRECT_URI
+        sync: false
+      - key: ADMIN_DISCORD_IDS
+        sync: false
