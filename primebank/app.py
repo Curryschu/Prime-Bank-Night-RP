@@ -34,7 +34,7 @@ app.config.update(
 
 def db():
     if "db" not in g:
-        g.db = psycopg.connect(DATABASE_URL, row_factory=dict_row, connect_timeout=15)
+        g.db = psycopg.connect(DATABASE_URL, row_factory=dict_row, connect_timeout=15, autocommit=True)
     return g.db
 
 @app.teardown_appcontext
