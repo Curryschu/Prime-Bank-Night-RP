@@ -172,9 +172,6 @@ def callback():
             ON CONFLICT(discord_id) DO UPDATE
             SET username = EXCLUDED.username, avatar = EXCLUDED.avatar
         """, (uid, username, avatar_url, account_no))
-    # The earlier SELECT opened an outer transaction; commit it so the
-    # newly created/updated Discord user is persisted before redirecting.
-    conn.commit()
 
     session.clear()
     session["discord_id"] = uid
@@ -264,49 +261,115 @@ def admin():
 
     if request.method == "POST":
         if request.form.get("csrf") != session.get("csrf"):
-            flash("Ungültige Anfrage.", "error")
+            flash("Ungültige Anfrage. Bitte Seite neu laden.", "error")
             return redirect(url_for("admin"))
 
-        account_no = request.form.get("account_no", "").strip().upper()
+        action = request.form.get("action", "")
         try:
             amount = int(request.form.get("amount", "0"))
         except (TypeError, ValueError):
             amount = 0
-        action = request.form.get("action")
-        target = db().execute(
-            "SELECT * FROM users WHERE account_no = %s", (account_no,)
-        ).fetchone()
 
-        if not target or amount <= 0 or action not in ("add", "remove"):
-            flash("Bitte Konto und positiven Betrag korrekt angeben.", "error")
+        if amount <= 0:
+            flash("Bitte einen gültigen positiven Betrag eingeben.", "error")
+            return redirect(url_for("admin"))
+
+        conn = db()
+
+        if action in ("add", "remove"):
+            account_no = request.form.get("account_no", "").strip().upper()
+            target = conn.execute(
+                "SELECT * FROM users WHERE account_no = %s", (account_no,)
+            ).fetchone()
+
+            if not target:
+                flash("Dieses Konto wurde nicht gefunden.", "error")
+            else:
+                delta = amount if action == "add" else -amount
+                try:
+                    with conn.transaction():
+                        updated = conn.execute("""
+                            UPDATE users
+                            SET balance = balance + %s
+                            WHERE discord_id = %s AND balance + %s >= 0
+                            RETURNING discord_id
+                        """, (delta, target["discord_id"], delta)).fetchone()
+
+                        if not updated:
+                            flash("Das Konto hat nicht genügend Guthaben.", "error")
+                        else:
+                            conn.execute("""
+                                INSERT INTO transactions(sender_id, receiver_id, amount, note, created_at)
+                                VALUES(%s, %s, %s, %s, %s)
+                            """, (
+                                None if action == "add" else target["discord_id"],
+                                target["discord_id"] if action == "add" else None,
+                                amount,
+                                "Verwaltung: Gutschrift" if action == "add" else "Verwaltung: Auszahlung",
+                                int(time.time())
+                            ))
+                            flash("Kontostand wurde aktualisiert.", "success")
+                except Exception:
+                    app.logger.exception("Admin balance update failed")
+                    flash("Kontostand konnte nicht aktualisiert werden.", "error")
+
+        elif action == "transfer":
+            sender_no = request.form.get("sender_account_no", "").strip().upper()
+            receiver_no = request.form.get("receiver_account_no", "").strip().upper()
+            note = request.form.get("note", "").strip()[:120] or "Admin-Überweisung"
+
+            if not sender_no or not receiver_no:
+                flash("Bitte Absender- und Empfängerkontonummer angeben.", "error")
+            elif sender_no == receiver_no:
+                flash("Absender und Empfänger müssen unterschiedliche Konten sein.", "error")
+            else:
+                try:
+                    with conn.transaction():
+                        # Konten in gleichbleibender Reihenfolge sperren, damit
+                        # parallele Überweisungen möglichst keine Deadlocks erzeugen.
+                        locked = {}
+                        for account in sorted((sender_no, receiver_no)):
+                            row = conn.execute(
+                                "SELECT * FROM users WHERE account_no = %s FOR UPDATE",
+                                (account,)
+                            ).fetchone()
+                            if row:
+                                locked[account] = row
+
+                        sender = locked.get(sender_no)
+                        receiver = locked.get(receiver_no)
+
+                        if not sender or not receiver:
+                            flash("Absender- oder Empfängerkonto wurde nicht gefunden.", "error")
+                        elif sender["balance"] < amount:
+                            flash("Das Absenderkonto hat nicht genügend Guthaben.", "error")
+                        else:
+                            conn.execute(
+                                "UPDATE users SET balance = balance - %s WHERE discord_id = %s",
+                                (amount, sender["discord_id"])
+                            )
+                            conn.execute(
+                                "UPDATE users SET balance = balance + %s WHERE discord_id = %s",
+                                (amount, receiver["discord_id"])
+                            )
+                            conn.execute("""
+                                INSERT INTO transactions(sender_id, receiver_id, amount, note, created_at)
+                                VALUES(%s, %s, %s, %s, %s)
+                            """, (
+                                sender["discord_id"], receiver["discord_id"],
+                                amount, note, int(time.time())
+                            ))
+                            flash(
+                                f"{amount:,} {CURRENCY} wurden von {sender['username']} an {receiver['username']} überwiesen.".replace(",", "."),
+                                "success"
+                            )
+                except Exception:
+                    app.logger.exception("Admin transfer failed")
+                    flash("Admin-Überweisung fehlgeschlagen. Bitte erneut versuchen.", "error")
         else:
-            delta = amount if action == "add" else -amount
-            conn = db()
-            try:
-                with conn.transaction():
-                    updated = conn.execute("""
-                        UPDATE users
-                        SET balance = balance + %s
-                        WHERE discord_id = %s AND balance + %s >= 0
-                        RETURNING discord_id
-                    """, (delta, target["discord_id"], delta)).fetchone()
-                    if not updated:
-                        flash("Das Konto hat nicht genügend Guthaben.", "error")
-                    else:
-                        conn.execute("""
-                            INSERT INTO transactions(sender_id, receiver_id, amount, note, created_at)
-                            VALUES(%s, %s, %s, %s, %s)
-                        """, (
-                            None if action == "add" else target["discord_id"],
-                            target["discord_id"] if action == "add" else None,
-                            amount,
-                            "Verwaltung: Gutschrift" if action == "add" else "Verwaltung: Auszahlung",
-                            int(time.time())
-                        ))
-                        flash("Kontostand wurde aktualisiert.", "success")
-            except Exception:
-                app.logger.exception("Admin balance update failed")
-                flash("Kontostand konnte nicht aktualisiert werden.", "error")
+            flash("Unbekannte Admin-Aktion.", "error")
+
+        return redirect(url_for("admin"))
 
     users = db().execute(
         "SELECT username, account_no, balance FROM users ORDER BY username"
