@@ -172,6 +172,9 @@ def callback():
             ON CONFLICT(discord_id) DO UPDATE
             SET username = EXCLUDED.username, avatar = EXCLUDED.avatar
         """, (uid, username, avatar_url, account_no))
+    # The earlier SELECT opened an outer transaction; commit it so the
+    # newly created/updated Discord user is persisted before redirecting.
+    conn.commit()
 
     session.clear()
     session["discord_id"] = uid
