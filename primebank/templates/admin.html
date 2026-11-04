@@ -1,3 +1,63 @@
-{% extends "base.html" %}{% block title %}Verwaltung – PrimeBank{% endblock %}{% block content %}
-<div class="eyebrow">INTERNER BEREICH</div><h1>Bankverwaltung</h1><section class="panel"><h2>Kontostand ändern</h2><form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label>Kontonummer</label><input name="account_no" required placeholder="PB12AB34CD"><label>Betrag</label><input name="amount" type="number" min="1" required><label>Aktion</label><select name="action"><option value="add">Gutschreiben</option><option value="remove">Abziehen</option></select><button class="button">Änderung speichern →</button></form></section>
-<section class="panel history"><h2>Alle Konten</h2>{% for u in users %}<div class="tx"><div><strong>{{ u.username }}</strong><small>{{ u.account_no }}</small></div><b>{{ "{:,.0f}".format(u.balance).replace(",", ".") }} {{ currency }}</b></div>{% else %}<p>Noch keine Konten.</p>{% endfor %}</section>{% endblock %}
+{% extends "base.html" %}
+{% block title %}Verwaltung – PrimeBank{% endblock %}
+{% block content %}
+<div class="eyebrow">INTERNER BEREICH</div>
+<h1>Bankverwaltung</h1>
+
+<section class="panel">
+  <h2>Geld zwischen Konten überweisen</h2>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="action" value="transfer">
+
+    <label>Absender-Kontonummer</label>
+    <input name="sender_account_no" required placeholder="PB12AB34CD">
+
+    <label>Empfänger-Kontonummer</label>
+    <input name="receiver_account_no" required placeholder="PB56EF78GH">
+
+    <label>Betrag</label>
+    <input name="amount" type="number" min="1" step="1" required>
+
+    <label>Verwendungszweck (optional)</label>
+    <input name="note" maxlength="120" placeholder="Admin-Überweisung">
+
+    <button class="button" type="submit">Überweisung ausführen →</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Kontostand ändern</h2>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Kontonummer</label>
+    <input name="account_no" required placeholder="PB12AB34CD">
+
+    <label>Betrag</label>
+    <input name="amount" type="number" min="1" step="1" required>
+
+    <label>Aktion</label>
+    <select name="action">
+      <option value="add">Gutschreiben</option>
+      <option value="remove">Abziehen</option>
+    </select>
+
+    <button class="button" type="submit">Änderung speichern →</button>
+  </form>
+</section>
+
+<section class="panel history">
+  <h2>Alle Konten</h2>
+  {% for u in users %}
+    <div class="tx">
+      <div>
+        <strong>{{ u.username }}</strong>
+        <small>{{ u.account_no }}</small>
+      </div>
+      <b>{{ "{:,.0f}".format(u.balance).replace(",", ".") }} {{ currency }}</b>
+    </div>
+  {% else %}
+    <p>Noch keine Konten.</p>
+  {% endfor %}
+</section>
+{% endblock %}
