@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}PrimeBank{% endblock %}</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body><nav><a class="brand" href="/">◈ PRIME<span>BANK</span></a><div>{% if logged_in %}<a href="/dashboard">Konto</a><a href="/logout">Abmelden</a>{% endif %}</div></nav>
+<main>{% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endwith %}
+{% block content %}{% endblock %}</main><footer>PRIMEBANK · RLP RP VC <span>Fiktive Ingame-Währung – kein echtes Geld.</span></footer></body></html>
